@@ -103,6 +103,13 @@ Congratulations, you now have a distcc enabled android build environment.
 
 # Common questions
 
+## I can't distribute work to my windows machine with docker
+
+In windows you need to create an inbound firewall rule for port 3632 (TCP) to allow connections to the docker container.
+It's not enough to simply map the port from the container to the host (as you did with the `-p` argument)
+
+OSX seems to accept connections without question and Linux behaves similarly.
+
 ## How should I configure my distcc setup?
 
 This is my experience:
