@@ -19,7 +19,7 @@ Yes! And it also makes a mean espresso while doing so... errmm.. No, not quite. 
 accelerate any NDK based part of your android build, but anything gradle or java will not
 be helped by this.
 
-But I have seen a 20 percent decrease in build time with just two machines total.
+But I have seen a 50 percent (!!) decrease in build time with two servers assigned 12 jobs each and 4 jobs assigned to the machine doing the compilation.
 
 # Setup
 
@@ -38,7 +38,7 @@ All of this is used when downloading the NDK from Google, the URL is built like 
 
 Some options can be tweaked for each container since they're environment variables
 
-- `DISTCC_JOBS` defines how many jobs the server will accept at most, the default value is `12` but can be overridden using `-e` option.
+- `DISTCC_JOBS` defines how many jobs the server will accept at most, the default value is `12` (typical Core i7 with 50% overprovisioning, see FAQ) but can be overridden using `-e` option.
 
 ## Setting up the system
 
@@ -50,19 +50,21 @@ First step, build and run the docker container on your server. This guide assume
 ```
 cd android-distccd
 docker build . -t android-distccd
-docker docker run -p 3632:3632 android-distccd
+docker run -p 3632:3632 android-distccd
 ```
 
 Next step, create a `~/.distcc/hosts` file on the client, this should contain a list of all servers that are running this docker image. The simplest format
 of this file is:
 
 ```
-10.0.0.1/24
-localhost/6
+10.0.0.1/12
+localhost/4
 ```
 
-In the above example, we've assigned a maximum of 24 concurrent jobs to 10.0.0.1 and 6 concurrent jobs to localhost (DO NOT USE 127.0.0.1, it will cause problems). You always want a line 
+In the above example, we've assigned a maximum of 12 concurrent jobs to 10.0.0.1 and 4 concurrent jobs to localhost (DO NOT USE 127.0.0.1, it will cause problems). You always want a line 
 specifying `localhost/<number of jobs>` or no compilation will take place on the client.
+
+*NOTE!* Windows and Mac users have to go into docker desktop settings to enable all cores, or they typically only use 2-4 cores on the system. This is CRUCIAL to utilize the hosts properly
 
 Once this is set up, you have one last thing to do. Android NDK uses `ninja` which is great, unfortunately there is no easy way to convince it to use more threads than the host has cores.
 
@@ -81,7 +83,7 @@ so the tools can pick up on them, so we do this:
 
 ```
 export CCACHE_PREFIX=/where/you/have/the/repo/distcc_filter.sh
-export NINJA_JOBS=30
+export NINJA_JOBS=18
 ```
 Why do we not point to `distcc` directly? Because some arguments may need filtering or adding. In my experience, we need to stop the `unused arguments` warning, since it will create issues if the compiler is also issued `-Werror` which says warnings are errors. So while compilation will work just fine, you'll still fail due to this. Obviously that is less than ideal and thus this wrapper to make sure it doesn't happen. The resulting output will be the same, we just avoid stalling out the use of the distcc server which caused this warning (failed distcc job will blacklist the server for X minutes).
 
@@ -92,7 +94,7 @@ Finally, launch Android Studio or kick off your build from the same command line
 If everything works as expected, you may see a print-out saying
 
 ```
-=== NINJA OVERDRIVE === USING 30 JOBS AS ASKED MASTER ===
+=== NINJA OVERDRIVE === USING 18 JOBS AS ASKED MASTER ===
 ```
 
 on your client machine (don't worry if you don't, some build setups simply discard that output) and gradually the server (10.0.0.1 in this case) will start to print out COMPILE messages in the console.
@@ -101,9 +103,14 @@ Congratulations, you now have a distcc enabled android build environment.
 
 # Common questions
 
-## How many jobs should I assign per host
+## How should I configure my distcc setup?
 
-I typically recommend 2x-3x overprovisioning, so if your CPU has 8 cores (both real and otherwise), I'd set it to 16-24, since it's hard to keep it completely saturated otherwise. As for the local client machine, I tend to go with the same amount as cores minus 1 or 2 since you also have to take the overhead of preprocessing and sending the jobs into account.
+This is my experience:
+- For 8 cores, overprovision by 50%, so assign 12 jobs (also the default for the docker image)
+- Do not exceed the amount of jobs the distcc server is configured for
+- Using LZO compression helps, the overhead is minimal (cpu wise). Just add `,lzo` at the end of the host line
+- Don't use all cores on local host. It does the linking and preprocessing. I find using 50% of the cores yields best performance
+- Place fastest host first, local host last (again, does the linking and preprocessing)
 
 Of course, your milage will vary and depending on setup, you may want to tweak this.
 
